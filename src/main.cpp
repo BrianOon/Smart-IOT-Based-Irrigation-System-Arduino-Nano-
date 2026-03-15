@@ -1,11 +1,17 @@
 // Define module that is used.
 #define TINY_GSM_MODEM_SIM900
 
+// define Blynk template.
+#define BLYNK_TEMPLATE_ID "TMPL68a2_SKi3"
+#define BLYNK_TEMPLATE_NAME "Smart IOT Based Irrigation Arduino"
+#define BLYNK_AUTH_TOKEN "xmOiSCfd2WRfOyK94jKNGJZ1D3YE14JC"
+
 // Headers.
 #include <Arduino.h>
 #include <SoftwareSerial.h>
 #include <TinyGsmClient.h> // https://github.com/vshymanskyy/TinyGSM/blob/master/examples/HttpClient/HttpClient.ino
 #include <ArduinoJson.h>
+#include <BlynkSimpleTinyGSM.h> // https://github.com/Tech-Trends-Shameer/Arduino-GSM-Projects/blob/main/Home-Automation-Using-Arduino-GSM-Blynk-IOT/home-automation-using-arduino-gms-blynk-iot.ino
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////
 /***************************************************************************************************
@@ -39,16 +45,32 @@ RX_pin = 2, // Pin that receives external data.
 TX_pin = 3, // Pin that transmits data externally.
 pump_relay_pin = 19; 
 
-// Sets serial ports for communication with SIM900 module.
-SoftwareSerial serialAT(RX_pin, TX_pin); 
-TinyGsm modem(serialAT);
-TinyGsmClient client(modem);
+// Declare variables of parameters.
+float
+  soil_moist = 20,
+  air_humid = 20,
+  temperature = 20;
+String
+  prob1 = "none",
+  prob2 = "none";
 
 // Declare constants which is used for condition checks.
 const float 
   max_moist = 60, 
   max_humid = 70, 
   min_temp = 4;
+
+// Sets serial ports for communication with SIM900 module.
+SoftwareSerial serialAT(RX_pin, TX_pin); 
+TinyGsm modem(serialAT);
+TinyGsmClient client(modem);
+
+// Declare Blynk's built in timer.
+BlynkTimer timer;
+
+// Blynk cloud server.
+const char*
+  host = "blynk.cloud";
 
 // Declare constants relating to the API host.
 const String
@@ -75,7 +97,7 @@ const char
 
 // Values for timer for environment check.
 const unsigned int
-    weather_interval = 300000,
+    weather_interval = 10000, // Checks every 10s. Need to switch to 300000s (5 mins).
     max_checks = 12;
 int
     num_rain_checks = 0; // Failsafe value for false rain predictions.
@@ -84,14 +106,14 @@ unsigned long
 
 // Function declaration.
 bool 
-  env_condition_check(float soil_moist, float air_humid, float temperature), 
-  soil_moist_check(float soil_moist),
-  air_humid_check(float air_humid),
-  temperature_check(float temperature),
-  weather_check(),
-  rain_check(String prob1, String prob2);
+  env_condition_check(), 
+  soil_moist_check(),
+  air_humid_check(),
+  temperature_check(),
+  weather_check();
 void 
-  set_location();
+  set_location(),
+  blynk_func();
 
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -103,6 +125,10 @@ void setup() {
 
   Serial.begin(9600);
   serialAT.begin(9600);
+  Blynk.begin(BLYNK_AUTH_TOKEN, modem, apn, gprsUser, gprsPass);
+
+  // Set pin mode.
+  pinMode(pump_relay_pin, OUTPUT);
 
   // GPRS setup.
   Serial.println("Initialising modem.");
@@ -112,11 +138,17 @@ void setup() {
   Serial.println("Connecting to GPRS...");
   modem.gprsConnect(apn, gprsUser, gprsPass);
 
+  timer.setInterval(1000L, blynk_func); 
+
 }
 
 void loop() {
 
   delay(1000); // 1s delay.
+
+  // Run Blynk.
+  Blynk.run();
+  timer.run();
 
   // Checks if network is connected. Reconnects and restarts the loop if not.
   if (!modem.isNetworkConnected()) {
@@ -142,18 +174,17 @@ void loop() {
   
   } 
 
-  // Declare variables. Random temporary values are used for now.
-  float 
-    soil_moist = random() % 101, 
-    air_humid = random() % 101, 
-    temperature = random() % 101;
+  // Random temporary values are used for now.
+  soil_moist = random() % 101, 
+  air_humid = random() % 101, 
+  temperature = random() % 101;
 
-  if (env_condition_check(soil_moist, air_humid, temperature)) {
+  if (env_condition_check()) {
 
     Serial.println("Plant watered");
     Serial.println("_________________________________________");
     digitalWrite(pump_relay_pin, HIGH);
-    delay(10000); // Waters for 10 seconds.
+    delay(10000); // Waters for 10s
     digitalWrite(pump_relay_pin, LOW);
 
   }
@@ -166,9 +197,9 @@ void loop() {
 
 // Function Definition.
   // Function that checks every environment condition.
-bool env_condition_check(float soil_moist, float air_humid, float temperature) {
+bool env_condition_check() {
 
-  if (soil_moist_check(soil_moist) && air_humid_check(air_humid) && temperature_check(temperature)) {
+  if (soil_moist_check() && air_humid_check() && temperature_check()) {
     if (good_weather) {
 
       return true;
@@ -189,7 +220,7 @@ bool env_condition_check(float soil_moist, float air_humid, float temperature) {
 }
 
   // Function that checks soil moisture.
-bool soil_moist_check(float soil_moist) {
+bool soil_moist_check() {
   
   if (soil_moist <= max_moist) {
     Serial.println("Soil moisture passed the check");
@@ -204,7 +235,7 @@ bool soil_moist_check(float soil_moist) {
 }
 
   // Function that checks air humidity.
-bool air_humid_check(float air_humid) {
+bool air_humid_check() {
 
   if (air_humid <= max_humid) {
     Serial.println("Air humidity passed the check");
@@ -219,7 +250,7 @@ bool air_humid_check(float air_humid) {
 }
 
   // Function that checks surrounding temperature.
-bool temperature_check(float temperature) {
+bool temperature_check() {
 
   if (temperature >= min_temp) {
     Serial.println("Temperature passed the check");
@@ -233,17 +264,30 @@ bool temperature_check(float temperature) {
 
 }
 
-  // Function updates the location of the devicein longitude and latitude based on the nearby cell providers.
+  // Function updates the location through Blynk
+BLYNK_WRITE(V5) {
+    latitude = param.asStr();
+    Serial.print("Latitude changed to ");
+    Serial.println(latitude);
+}
+BLYNK_WRITE(V6) {
+    longitude = param.asStr();
+    Serial.print("Longitude changed to ");
+    Serial.println(longitude);
+}
+
+/* Unused.
+  // Function updates the location of the device in longitude and latitude based on the nearby cell providers.
     // Unconfirmed if this funtion works.
 void set_location() {
 
-    /*
+
       Note:
       serialAT.println() in this case outputs a message to the GSM module, instead of the computer like Serial.println().
       Thus, this does not print a message on the computer.
       The message is an attention (AT) command, which is used for communication equipment such as GSM modules.
       the command AT+CIPGSMLOC gets location in the form of string "<locationcode>,<longitude>,<latitude>,<date>,<time>"
-    */
+
 
   serialAT.println("AT+CIPGSMLOC=1,1");
   delay(2000);
@@ -270,6 +314,8 @@ void set_location() {
     Serial.println("Error in set_location() function.");
   }
 }
+
+*/
 
   // Function that checks local weather forcasts.
 bool weather_check() {
@@ -319,16 +365,15 @@ bool weather_check() {
 
   if (!error) {
     
-    String
-      prob1 = doc["hourly"]["data"][0]["icon"] | "none", 
-      prob2 = doc["hourly"]["data"][1]["icon"] | "none";
+    prob1 = doc["hourly"]["data"][0]["icon"] | "none", 
+    prob2 = doc["hourly"]["data"][1]["icon"] | "none";
 
-    Serial.print("Rain Prob (Hour 1): "); 
+    Serial.print("Weather Forecast (Hour 1): "); 
     Serial.println(prob1);
-    Serial.print("Rain Prob (Hour 2): "); 
+    Serial.print("Weather Forecast (Hour 2): "); 
     Serial.println(prob2);
 
-    if (prob1 == "rain" && prob2 == "rain" && num_rain_checks <= max_checks) {
+    if ((prob1 == "rain" || prob2 == "rain") && num_rain_checks <= max_checks) {
       Serial.println("Rain likely in this hour or next hour, irrigation cancelled.");
       Serial.println("_________________________________________");
       num_rain_checks += 1;
@@ -346,4 +391,13 @@ bool weather_check() {
   num_rain_checks = 0;
   return true;
   
+}
+
+// Function to send values to Blynk 
+void blynk_func() {
+  Blynk.virtualWrite(V0, soil_moist);
+  Blynk.virtualWrite(V1, air_humid);
+  Blynk.virtualWrite(V2, temperature);
+  Blynk.virtualWrite(V3, prob1);
+  Blynk.virtualWrite(V4, prob2);
 }
