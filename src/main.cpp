@@ -311,8 +311,8 @@ bool weather_check() {
 
     // Parse JSON received from API.
   JsonDocument filter;
-  filter["hourly"]["data"][0]["precipProbability"] = true;
-  filter["hourly"]["data"][1]["precipProbability"] = true;
+  filter["hourly"]["data"][0]["icon"] = true;
+  filter["hourly"]["data"][1]["icon"] = true;
 
   JsonDocument doc;
   DeserializationError error = deserializeJson(doc, httpResponse, DeserializationOption::Filter(filter));
