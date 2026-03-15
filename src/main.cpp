@@ -82,13 +82,25 @@ int
 unsigned long
   last_weather_check = 0;
 
+// List of rainy conditions.
+String
+  list_rainy_con[] = {
+    "possible-rain-day", 
+    "possible-precipitation-day", 
+    "possible-precipitation-night", 
+    "possible-rain-night", "drizzle", 
+    "light-rain", 
+    "heavy-rain"
+  };
+
 // Function declaration.
 bool 
   env_condition_check(float soil_moist, float air_humid, float temperature), 
   soil_moist_check(float soil_moist),
   air_humid_check(float air_humid),
   temperature_check(float temperature),
-  weather_check();
+  weather_check(),
+  rain_check(String prob1, String prob2);
 void 
   set_location();
 
@@ -318,15 +330,14 @@ bool weather_check() {
 
   if (!error) {
     
-    float
-      prob1 = doc["hourly"]["data"][0]["precipProbability"] | 0.0, 
-      prob2 = doc["hourly"]["data"][1]["precipProbability"] | 0.0;
+    String
+      prob1 = doc["hourly"]["data"][0]["icon"] | "clear-day", 
+      prob2 = doc["hourly"]["data"][1]["icon"] | "clear-day";
 
     Serial.print("Rain Prob (Hour 1): "); Serial.println(prob1);
     Serial.print("Rain Prob (Hour 2): "); Serial.println(prob2);
 
-    
-    if ((prob1 > 0.6 || prob2 > 0.6) && num_rain_checks <= max_checks) {
+    if (rain_check(prob1, prob2) && num_rain_checks <= max_checks) {
       Serial.println("Rain likely in this hour or next hour, irrigation cancelled.");
       Serial.println("_________________________________________");
       num_rain_checks += 1;
@@ -344,4 +355,15 @@ bool weather_check() {
   num_rain_checks = 0;
   return true;
   
+}
+
+  // Function that checks for potential rain.
+bool rain_check(String prob1, String prob2) {
+  for (int i = 0; i < sizeof(list_rainy_con) / sizeof(* list_rainy_con); i++)
+  {
+    if (prob1 == list_rainy_con[i] || prob2 == list_rainy_con[i]){
+      return true;
+    }
+  }
+  return false;
 }
