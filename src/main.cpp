@@ -1,7 +1,10 @@
-// Define module that is used.
+// Define GSM module used.
 #define TINY_GSM_MODEM_SIM900
 
-// define Blynk template.
+// Define DHT type used.
+#define DHTTYPE DHT11 
+
+// Define Blynk template.
 #define BLYNK_TEMPLATE_ID "TMPL68a2_SKi3"
 #define BLYNK_TEMPLATE_NAME "Smart IOT Based Irrigation Arduino"
 #define BLYNK_AUTH_TOKEN "xmOiSCfd2WRfOyK94jKNGJZ1D3YE14JC"
@@ -12,6 +15,8 @@
 #include <TinyGsmClient.h> // https://github.com/vshymanskyy/TinyGSM/blob/master/examples/HttpClient/HttpClient.ino
 #include <ArduinoJson.h>
 #include <BlynkSimpleTinyGSM.h> // https://github.com/Tech-Trends-Shameer/Arduino-GSM-Projects/blob/main/Home-Automation-Using-Arduino-GSM-Blynk-IOT/home-automation-using-arduino-gms-blynk-iot.ino
+#include <Adafruit_Sensor.h>
+#include <DHT.h>
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////
 /***************************************************************************************************
@@ -24,13 +29,12 @@ surrounding temperature, and precipitation probability. The data is sent to Blyn
 This version is made for the Arduino Nano ATmega328 microcontroller with the SIM900 GSSM Module.
 
 Author: BrianOon (Bren)
-Latest Revision: 15/3/2026
+Latest Revision: 16/3/2026
 
 To-do List:
 
-- Test location system, Pirate Weather API and weather check
-- Implement sensor readings
-- Connect GSM to Blynk app
+- Test Pirate Weather API and weather checking system.
+- Implement soil moisture sensor readings.
 
 For any inquiries, contact me at brianoon07+fypPTSS@gmail.com
 
@@ -41,9 +45,10 @@ For any inquiries, contact me at brianoon07+fypPTSS@gmail.com
 
 // Declare pins.
 const int
-RX_pin = 2, // Pin that receives external data.
-TX_pin = 3, // Pin that transmits data externally.
-pump_relay_pin = 19; 
+  RX_pin = 2, // Pin that receives external data.
+  TX_pin = 3, // Pin that transmits data externally.
+  pump_relay_pin = 19,
+  dht_pin = 21;
 
 // Declare variables of parameters.
 float
@@ -60,12 +65,15 @@ const float
   max_humid = 70, 
   min_temp = 4;
 
-// Sets serial ports for communication with SIM900 module.
+// Initialise serial ports for communication with SIM900 module.
 SoftwareSerial serialAT(RX_pin, TX_pin); 
 TinyGsm modem(serialAT);
 TinyGsmClient client(modem);
 
-// Declare Blynk's built in timer.
+// Initialise DHT11.
+DHT dht(dht_pin, DHTTYPE);
+
+// Initialise Blynk's built in timer.
 BlynkTimer timer;
 
 // Blynk cloud server.
@@ -125,18 +133,23 @@ void setup() {
 
   Serial.begin(9600);
   serialAT.begin(9600);
-  Blynk.begin(BLYNK_AUTH_TOKEN, modem, apn, gprsUser, gprsPass);
 
   // Set pin mode.
   pinMode(pump_relay_pin, OUTPUT);
 
-  // GPRS setup.
+  // Initialise GPRS.
   Serial.println("Initialising modem.");
   modem.restart(); 
   Serial.print("Waiting for network...");
   modem.waitForNetwork();
   Serial.println("Connecting to GPRS...");
   modem.gprsConnect(apn, gprsUser, gprsPass);
+
+  // Initialise Blynk.
+  Blynk.begin(BLYNK_AUTH_TOKEN, modem, apn, gprsUser, gprsPass);
+
+  // Initialise DHT11.
+  dht.begin();
 
   timer.setInterval(1000L, blynk_func); 
 
@@ -174,10 +187,10 @@ void loop() {
   
   } 
 
-  // Random temporary values are used for now.
-  soil_moist = random() % 101, 
-  air_humid = random() % 101, 
-  temperature = random() % 101;
+  // Random temporary values are used soil moisture for now.
+  soil_moist = random() % 101;
+  air_humid = dht.readHumidity();
+  temperature = dht.readTemperature();
 
   if (env_condition_check()) {
 
@@ -400,4 +413,5 @@ void blynk_func() {
   Blynk.virtualWrite(V2, temperature);
   Blynk.virtualWrite(V3, prob1);
   Blynk.virtualWrite(V4, prob2);
+  Blynk.virtualWrite(V7, latitude + ", " + longitude);
 }
